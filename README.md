@@ -19,9 +19,8 @@
 //   010 AND   rd = rs1 & rs2
 //   011 LOAD  rd = DMEM[rs1 + imm7]
 //   111 NOP   no operation
-//==============================================================================
-`timescale 1ns / 1ps
- 
+
+`timescale 1ns / 1ps 
 module cpu_pipeline (
     input wire clk,
     input wire rst_n
