@@ -1,0 +1,79 @@
+`timescale 1ns / 1ps
+ 
+module cpu_pipeline_tb;
+ 
+    reg clk, rst_n;
+    integer cycle;
+    integer errors;
+ 
+    cpu_pipeline dut (.clk(clk), .rst_n(rst_n));
+ 
+    // 10 ns period clock
+    always #5 clk = ~clk;
+ 
+    // Build short textual tags for each stage from the instruction bits
+    // visible on the internal pipeline registers (hierarchical refs, sim only)
+    always @(posedge clk) begin
+        if (rst_n) begin
+            cycle = cycle + 1;
+            $display("cyc=%0d | IF: pc=%0d instr=%04h | ID: op=%0d rd=R%0d rs1=R%0d(%0d) rs2=R%0d(%0d) [byp1=%0b byp2=%0b] | EX: op=%0d rd=R%0d alu=%0d (fwd1=%0b fwd2=%0b) | MW: op=%0d rd=R%0d write=%0b result=%0d",
+                cycle,
+                dut.pc, dut.ifid_instr,
+                dut.id_op, dut.id_rd, dut.id_rs1, dut.id_rs1data, dut.id_rs2, dut.id_rs2data,
+                dut.id_bypass1, dut.id_bypass2,
+                dut.idex_op, dut.idex_rd, dut.ex_alu_result, dut.fwd1, dut.fwd2,
+                dut.exmw_op, dut.exmw_rd, dut.mw_regwrite, dut.mw_result);
+        end
+    end
+ 
+    task check8;
+        input [2:0] regnum;
+        input [7:0] expected;
+        begin
+            if (dut.regs[regnum] !== expected) begin
+                errors = errors + 1;
+                $display("FAIL: R%0d = %0d, expected %0d", regnum, dut.regs[regnum], expected);
+            end else begin
+                $display("PASS: R%0d = %0d", regnum, dut.regs[regnum]);
+            end
+        end
+    endtask
+ 
+    initial begin
+        $dumpfile("cpu_pipeline_tb.vcd");
+        $dumpvars(0, cpu_pipeline_tb);
+ 
+        clk = 0; rst_n = 0; cycle = 0; errors = 0;
+        $display("=================================================================================================");
+        $display(" 4-STAGE PIPELINED PROCESSOR - CYCLE-BY-CYCLE STAGE TRACE");
+        $display(" Program: LOAD R1,0(R0); LOAD R2,1(R0); ADD R3,R1,R2; SUB R4,R3,R1;");
+        $display("          AND R5,R3,R2; LOAD R6,2(R0); ADD R7,R6,R5; NOP x N");
+        $display(" DMEM preload: [0]=10 [1]=20 [2]=5");
+        $display("=================================================================================================");
+ 
+        #2 rst_n = 1;     // release reset shortly after first clock edge setup
+        #3;               // align
+ 
+        // Run long enough for all 7 instructions to drain through 4 stages
+        // (7 instrs + 3 pipeline-fill cycles + margin)
+        repeat (16) @(posedge clk);
+ 
+        $display("=================================================================================================");
+        $display(" FINAL REGISTER FILE CONTENTS");
+        $display("=================================================================================================");
+        check8(1, 8'd10);                // R1 = DMEM[0] = 10
+        check8(2, 8'd20);                // R2 = DMEM[1] = 20
+        check8(3, 8'd30);                // R3 = R1+R2   = 30
+        check8(4, 8'd20);                // R4 = R3-R1   = 20
+        check8(5, (8'd30 & 8'd20));      // R5 = R3&R2   = 20
+        check8(6, 8'd5);                 // R6 = DMEM[2] = 5
+        check8(7, 8'd25);                // R7 = R6+R5   = 25
+ 
+        $display("=================================================================================================");
+        if (errors == 0) $display(" RESULT: ALL CHECKS PASSED (0 errors)");
+        else              $display(" RESULT: %0d CHECK(S) FAILED", errors);
+        $display("=================================================================================================");
+        $finish;
+    end
+ 
+endmodule
